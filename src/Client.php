@@ -11,17 +11,16 @@
 namespace CSD\Marketo;
 
 // Guzzle
-use CommerceGuys\Guzzle\Plugin\Oauth2\Oauth2Plugin;
 use CSD\Marketo\Response\GetLeadChanges;
 use CSD\Marketo\Response\GetPagingToken;
-use Guzzle\Common\Collection;
-use Guzzle\Service\Client as GuzzleClient;
-use Guzzle\Service\Description\ServiceDescription;
+use GuzzleHttp\Client as GuzzleClient;
 
 // Response classes
 use CSD\Marketo\Response\AddOrRemoveLeadsToListResponse;
+use CSD\Marketo\Response\ApproveEmailResponse;
 use CSD\Marketo\Response\AssociateLeadResponse;
 use CSD\Marketo\Response\CreateOrUpdateLeadsResponse;
+use CSD\Marketo\Response\DeleteLeadResponse;
 use CSD\Marketo\Response\GetCampaignResponse;
 use CSD\Marketo\Response\GetCampaignsResponse;
 use CSD\Marketo\Response\GetLeadResponse;
@@ -30,6 +29,12 @@ use CSD\Marketo\Response\GetLeadsResponse;
 use CSD\Marketo\Response\GetListResponse;
 use CSD\Marketo\Response\GetListsResponse;
 use CSD\Marketo\Response\IsMemberOfListResponse;
+use CSD\Marketo\Response\RequestCampaignResponse;
+use CSD\Marketo\Response\ScheduleCampaignResponse;
+use CSD\Marketo\Response\UpdateEmailContentInEditableSectionResponse;
+use GuzzleHttp\HandlerStack;
+use kamermans\OAuth2\GrantType\ClientCredentials;
+use kamermans\OAuth2\OAuth2Middleware;
 
 /**
  * Guzzle client for communicating with the Marketo.com REST API.
@@ -43,22 +48,19 @@ class Client extends GuzzleClient
     /**
      * {@inheritdoc}
      */
-    public static function factory($config = array())
+    public static function factory($config = [])
     {
-        $default = array(
-            'url' => false,
-            'munchkin_id' => false,
-            'version' => 1,
-            'bulk' => false
-        );
+        $config = [
+            'url' => $config['url'] ?? false,
+            'munchkin_id' => $config['munchin_id'] ?? false,
+            'version' => $config['version'] ?? 1,
+            'bulk' => $config['bulk'] ?? false
+        ];
 
-        $required = array('client_id', 'client_secret', 'version');
-        $config = Collection::fromConfig($config, $default, $required);
-
-        $url = $config->get('url');
+        $url = $config['url'];
 
         if (!$url) {
-            $munchkin = $config->get('munchkin_id');
+            $munchkin = $config['munchkin_id'];
 
             if (!$munchkin) {
                 throw new \Exception('Must provide either a URL or Munchkin code.');
@@ -67,19 +69,28 @@ class Client extends GuzzleClient
             $url = sprintf('https://%s.mktorest.com', $munchkin);
         }
 
-        $grantType = new Credentials($url, $config->get('client_id'), $config->get('client_secret'));
-        $auth = new Oauth2Plugin($grantType);
+        // create client for oauth
+        $auth_client = new GuzzleClient([
+            'base_uri' => $url . '/identity/oauth/token'
+        ]);
+        
+        // retrieve an access token
+        $grant_type = new ClientCredentials($auth_client, [
+            'client_id' => $config['client_id'],
+            'client_secret' => $config['client_secret']
+        ]);
 
-        if ($config->get('bulk') === true) {
-            $restUrl = sprintf('%s/bulk/v%d', rtrim($url, '/'), $config->get('version'));
-        } else {
-            $restUrl = sprintf('%s/rest/v%d', rtrim($url, '/'), $config->get('version'));
-        }
-
-        $client = new self($restUrl, $config);
-        $client->addSubscriber($auth);
-        $client->setDescription(ServiceDescription::factory(__DIR__ . '/service.json'));
-        $client->setDefaultOption('headers/Content-Type', 'application/json');
+        // create an auth middleware with the access token
+        $oauth = new OAuth2Middleware($grant_type);
+        
+        // push oauth middleware onto the client handler stack
+        $stack = HandlerStack::create();
+        $stack->push($oauth);
+        
+        $client = new self([
+            'auth' => 'oauth',
+            'handler' => $stack
+        ]);
 
         return $client;
     }
@@ -124,7 +135,7 @@ class Client extends GuzzleClient
             throw new \Exception('Invalid $batchId provided in ' . __METHOD__);
         }
 
-        return $this->getResult('getBulkUploadStatus', array('batchId' => $batchId));
+        return $this->get(sprintf('leads/batch/%d.json', $batchId));
     }
 
     /**
@@ -142,7 +153,7 @@ class Client extends GuzzleClient
             throw new \Exception('Invalid $batchId provided in ' . __METHOD__);
         }
 
-        return $this->getResult('getBulkUploadFailures', array('batchId' => $batchId));
+        return $this->get(sprintf('leads/batch/%d/failures.json', $batchId));
     }
 
     /**
@@ -160,7 +171,7 @@ class Client extends GuzzleClient
             throw new \Exception('Invalid $batchId provided in ' . __METHOD__);
         }
 
-        return $this->getResult('getBulkUploadWarnings', array('batchId' => $batchId));
+        return $this->get(sprintf('leads/batch/%d/warnings.json', $batchId));
     }
 
     /**
@@ -180,7 +191,7 @@ class Client extends GuzzleClient
      *
      * @return CreateOrUpdateLeadsResponse
      */
-    private function createOrUpdateLeadsCommand($action, $leads, $lookupField, $args, $returnRaw = false)
+    private function createOrUpdateLeadsCommand($action, $leads, $lookupField, $args)
     {
         $args['input'] = $leads;
         $args['action'] = $action;
@@ -189,7 +200,9 @@ class Client extends GuzzleClient
             $args['lookupField'] = $lookupField;
         }
 
-        return $this->getResult('createOrUpdateLeads', $args, false, $returnRaw);
+        return new CreateOrUpdateLeadsResponse(
+            $this->get('leads.json', $args)
+        );
     }
 
     /**
@@ -270,13 +283,15 @@ class Client extends GuzzleClient
      *
      * @return GetListsResponse
      */
-    public function getLists($ids = null, $args = array(), $returnRaw = false)
+    public function getLists($ids = null, $args = array())
     {
         if ($ids) {
             $args['id'] = $ids;
         }
 
-        return $this->getResult('getLists', $args, is_array($ids), $returnRaw);
+        return new GetListsResponse(
+            $this->get('lists.json', $args)
+        );
     }
 
     /**
@@ -289,11 +304,13 @@ class Client extends GuzzleClient
      *
      * @return GetListResponse
      */
-    public function getList($id, $args = array(), $returnRaw = false)
+    public function getList($id, $args = array())
     {
         $args['id'] = $id;
 
-        return $this->getResult('getList', $args, false, $returnRaw);
+        return new GetListResponse(
+            $this->get(sprintf('lists/%d.json', $id), $args)
+        );
     }
 
     /**
@@ -307,7 +324,7 @@ class Client extends GuzzleClient
      *
      * @return GetLeadsResponse
      */
-    public function getLeadsByFilterType($filterType, $filterValues, $fields = array(), $nextPageToken = null, $returnRaw = false)
+    public function getLeadsByFilterType($filterType, $filterValues, $fields = array(), $nextPageToken = null)
     {
         $args['filterType'] = $filterType;
         $args['filterValues'] = $filterValues;
@@ -320,7 +337,9 @@ class Client extends GuzzleClient
             $args['fields'] = implode(',', $fields);
         }
 
-        return $this->getResult('getLeadsByFilterType', $args, false, $returnRaw);
+        return new GetLeadsResponse(
+            $this->get('leads.json', $args)
+        );
     }
 
     /**
@@ -337,7 +356,7 @@ class Client extends GuzzleClient
      *
      * @return GetLeadResponse
      */
-    public function getLeadByFilterType($filterType, $filterValue, $fields = array(), $returnRaw = false)
+    public function getLeadByFilterType($filterType, $filterValue, $fields = array())
     {
         $args['filterType'] = $filterType;
         $args['filterValues'] = $filterValue;
@@ -346,7 +365,9 @@ class Client extends GuzzleClient
             $args['fields'] = implode(',', $fields);
         }
 
-        return $this->getResult('getLeadByFilterType', $args, false, $returnRaw);
+        return new GetLeadResponse(
+            $this->get('leads.json', $args)
+        );
     }
 
     /**
@@ -356,9 +377,11 @@ class Client extends GuzzleClient
      *
      * @return GetLeadPartitionsResponse
      */
-    public function getLeadPartitions($args = array(), $returnRaw = false)
+    public function getLeadPartitions($args = array())
     {
-        return $this->getResult('getLeadPartitions', $args, false, $returnRaw);
+        return new GetLeadPartitionsResponse(
+            $this->get('leads/partitions.json', $args)
+        );
     }
 
     /**
@@ -371,11 +394,13 @@ class Client extends GuzzleClient
      *
      * @return GetLeadsResponse
      */
-    public function getLeadsByList($listId, $args = array(), $returnRaw = false)
+    public function getLeadsByList($listId, $args = array())
     {
         $args['listId'] = $listId;
 
-        return $this->getResult('getLeadsByList', $args, false, $returnRaw);
+        return new GetLeadsResponse(
+            $this->get(sprintf('list/%d/leads.json', $listId), $args)
+        );
     }
 
     /**
@@ -389,7 +414,7 @@ class Client extends GuzzleClient
      *
      * @return GetLeadResponse
      */
-    public function getLead($id, $fields = null, $args = array(), $returnRaw = false)
+    public function getLead($id, $fields = null, $args = array())
     {
         $args['id'] = $id;
 
@@ -397,7 +422,9 @@ class Client extends GuzzleClient
             $args['fields'] = implode(',', $fields);
         }
 
-        return $this->getResult('getLead', $args, false, $returnRaw);
+        return new GetLeadResponse(
+            $this->get(sprintf('lead/%d.json', $id), $args)
+        );
     }
 
     /**
@@ -416,7 +443,9 @@ class Client extends GuzzleClient
         $args['listId'] = $listId;
         $args['id'] = $id;
 
-        return $this->getResult('isMemberOfList', $args, is_array($id), $returnRaw);
+        return new IsMemberOfListResponse(
+            $this->get(sprintf('lists/%d/leads/ismember.json', $listId), $args)
+        );
     }
 
     /**
@@ -429,11 +458,13 @@ class Client extends GuzzleClient
      *
      * @return GetCampaignResponse
      */
-    public function getCampaign($id, $args = array(), $returnRaw = false)
+    public function getCampaign($id, $args = array())
     {
         $args['id'] = $id;
 
-        return $this->getResult('getCampaign', $args, false, $returnRaw);
+        return new GetCampaignResponse(
+            $this->get(sprintf('campaigns/%d.json', $id), $args)
+        );
     }
 
     /**
@@ -446,13 +477,15 @@ class Client extends GuzzleClient
      *
      * @return GetCampaignsResponse
      */
-    public function getCampaigns($ids = null, $args = array(), $returnRaw = false)
+    public function getCampaigns($ids = null, $args = array())
     {
         if ($ids) {
             $args['id'] = $ids;
         }
 
-        return $this->getResult('getCampaigns', $args, is_array($ids), $returnRaw);
+        return new GetCampaignsResponse(
+            $this->get('campaigns.json', $args)
+        );
     }
 
     /**
@@ -471,7 +504,9 @@ class Client extends GuzzleClient
         $args['listId'] = $listId;
         $args['id'] = (array) $leads;
 
-        return $this->getResult('addLeadsToList', $args, true, $returnRaw);
+        return new AddOrRemoveLeadsToListResponse(
+            $this->get(sprintf('lists/%d/leads.json', $listId), $args)
+        );
     }
 
     /**
@@ -490,7 +525,9 @@ class Client extends GuzzleClient
         $args['listId'] = $listId;
         $args['id'] = (array) $leads;
 
-        return $this->getResult('removeLeadsFromList', $args, true, $returnRaw);
+        return new AddOrRemoveLeadsToListResponse(
+            $this->delete(sprintf('lists/%d/leads.json', $listId), $args)
+        );
     }
 
     /**
@@ -507,7 +544,9 @@ class Client extends GuzzleClient
     {
         $args['id'] = (array) $leads;
 
-        return $this->getResult('deleteLead', $args, true, $returnRaw);
+        return new DeleteLeadResponse(
+            $this->delete('leads.json', $args)
+        );
     }
 
     /**
@@ -534,7 +573,9 @@ class Client extends GuzzleClient
             $args['input']['tokens'] = $tokens;
         }
 
-        return $this->getResult('requestCampaign', $args, false, $returnRaw);
+        return new RequestCampaignResponse(
+            $this->post(sprintf('campaigns/%d/trigger.json', $id), $args)
+        );
     }
 
     /**
@@ -561,7 +602,9 @@ class Client extends GuzzleClient
             $args['input']['tokens'] = $tokens;
         }
 
-        return $this->getResult('scheduleCampaign', $args, false, $returnRaw);
+        return new ScheduleCampaignResponse(
+            $this->post(sprintf('campaigns/%d/schedule.json', $id), $args)
+        );
     }
 
     /**
@@ -583,7 +626,9 @@ class Client extends GuzzleClient
             $args['cookie'] = $cookie;
         }
 
-        return $this->getResult('associateLead', $args, false, $returnRaw);
+        return new AssociateLeadResponse(
+            $this->post(sprintf('leads/%d/associate.json', $id), $args)
+        );
     }
 
     /**
@@ -601,7 +646,9 @@ class Client extends GuzzleClient
     {
         $args['sinceDatetime'] = $sinceDatetime;
 
-        return $this->getResult('getPagingToken', $args, false, $returnRaw);
+        return new AssociateLeadResponse(
+            $this->post('activities/pagingtoken.json', $args)
+        );
     }
 
     /**
@@ -625,8 +672,10 @@ class Client extends GuzzleClient
         if (count($fields)) {
             $args['fields'] = implode(',', $fields);
         }
-
-        return $this->getResult('getLeadChanges', $args, true, $returnRaw);
+        
+        return new GetLeadChanges(
+            $this->post('activities/leadchanges.json', $args)
+        );
     }
 
     /**
@@ -644,7 +693,9 @@ class Client extends GuzzleClient
     {
         $args['id'] = $emailId;
 
-        return $this->getResult('updateEmailContent', $args, false, $returnRaw);
+        return new Response(
+            $this->post(sprintf('rest/asset/v1/email/%d/content.json', $emailId), $args)
+        );
     }
 
     /**
@@ -663,7 +714,9 @@ class Client extends GuzzleClient
         $args['id'] = $emailId;
         $args['htmlId'] = $htmlId;
 
-        return $this->getResult('updateEmailContentInEditableSection', $args, false, $returnRaw);
+        return new UpdateEmailContentInEditableSectionResponse(
+            $this->post(sprintf('rest/asset/v1/email/%d/content/{htmlId}.json', $emailId), $args)
+        );
     }
 
     /**
@@ -675,43 +728,14 @@ class Client extends GuzzleClient
      *
      * @link http://developers.marketo.com/documentation/asset-api/approve-email-by-id/
      *
-     * @return approveEmail
+     * @return ApproveEmailResponse
      */
     public function approveEmail($emailId, $args = array(), $returnRaw = false)
     {
         $args['id'] = $emailId;
 
-        return $this->getResult('approveEmailbyId', $args, false, $returnRaw);
-    }
-
-    /**
-     * Internal helper method to actually perform command.
-     *
-     * @param string $command
-     * @param array  $args
-     * @param bool   $fixArgs
-     *
-     * @return Response
-     */
-    private function getResult($command, $args, $fixArgs = false, $returnRaw = false)
-    {
-        $cmd = $this->getCommand($command, $args);
-
-        // Marketo expects parameter arrays in the format id=1&id=2, Guzzle formats them as id[0]=1&id[1]=2.
-        // Use a quick regex to fix it where necessary.
-        if ($fixArgs) {
-            $cmd->prepare();
-
-            $url = preg_replace('/id%5B([0-9]+)%5D/', 'id', $cmd->getRequest()->getUrl());
-            $cmd->getRequest()->setUrl($url);
-        }
-
-        $cmd->prepare();
-
-        if ($returnRaw) {
-            return $cmd->getResponse()->getBody(true);
-        }
-
-        return $cmd->getResult();
+        return new ApproveEmailResponse(
+            $this->post(sprintf('rest/asset/v1/email/%d/approveDraft.json', $emailId), $args)
+        );
     }
 }
