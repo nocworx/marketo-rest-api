@@ -18,7 +18,7 @@ use Guzzle\Service\Command\ResponseClassInterface;
  *
  * @author Daniel Chesterton <daniel@chestertondevelopment.com>
  */
-class Response implements ResponseClassInterface
+class Response
 {
     /**
      * @var array
@@ -75,13 +75,5 @@ class Response implements ResponseClassInterface
         }
 
         return null;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public static function fromCommand(OperationCommand $command)
-    {
-        return new static($command->getResponse()->json());
     }
 }
