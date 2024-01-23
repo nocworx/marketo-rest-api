@@ -117,7 +117,7 @@ class Client extends GuzzleClient
             $args['format'] = 'csv';
         }
 
-        return json_decode($this->post('leads.json', $args)->getBody());
+        return $this->_post('leads.json', $args);
 
     }
 
@@ -136,7 +136,7 @@ class Client extends GuzzleClient
             throw new \Exception('Invalid $batchId provided in ' . __METHOD__);
         }
 
-        return json_decode($this->get(sprintf('leads/batch/%d.json', $batchId))->getBody());
+        return $this->_get(sprintf('leads/batch/%d.json', $batchId));
     }
 
     /**
@@ -154,7 +154,7 @@ class Client extends GuzzleClient
             throw new \Exception('Invalid $batchId provided in ' . __METHOD__);
         }
 
-        return json_decode($this->get(sprintf('leads/batch/%d/failures.json', $batchId))->getBody());
+        return $this->_get(sprintf('leads/batch/%d/failures.json', $batchId));
     }
 
     /**
@@ -172,7 +172,7 @@ class Client extends GuzzleClient
             throw new \Exception('Invalid $batchId provided in ' . __METHOD__);
         }
 
-        return json_decode($this->get(sprintf('leads/batch/%d/warnings.json', $batchId))->getBody());
+        return $this->_get(sprintf('leads/batch/%d/warnings.json', $batchId));
     }
 
     /**
@@ -202,7 +202,7 @@ class Client extends GuzzleClient
         }
 
         return new CreateOrUpdateLeadsResponse(
-            json_decode($this->get('leads.json', $args)->getBody())
+            $this->_post('leads.json', $args)
         );
     }
 
@@ -291,7 +291,7 @@ class Client extends GuzzleClient
         }
 
         return new GetListsResponse(
-            json_decode($this->get('lists.json', $args)->getBody())
+            $this->_get('lists.json', $args)
         );
     }
 
@@ -310,7 +310,7 @@ class Client extends GuzzleClient
         $args['id'] = $id;
 
         return new GetListResponse(
-            json_decode($this->get(sprintf('lists/%d.json', $id), $args)->getBody())
+            $this->_get(sprintf('lists/%d.json', $id))
         );
     }
 
@@ -339,7 +339,7 @@ class Client extends GuzzleClient
         }
 
         return new GetLeadsResponse(
-            json_decode($this->get('leads.json', $args)->getBody())
+            $this->_get('leads.json', $args)
         );
     }
 
@@ -367,7 +367,7 @@ class Client extends GuzzleClient
         }
 
         return new GetLeadResponse(
-            json_decode($this->get('leads.json', $args)->getBody())
+            $this->_get('leads.json', $args)
         );
     }
 
@@ -381,7 +381,7 @@ class Client extends GuzzleClient
     public function getLeadPartitions($args = array())
     {
         return new GetLeadPartitionsResponse(
-            json_decode($this->get('leads/partitions.json', $args)->getBody())
+            $this->_get('leads/partitions.json', $args)
         );
     }
 
@@ -400,7 +400,7 @@ class Client extends GuzzleClient
         $args['listId'] = $listId;
 
         return new GetLeadsResponse(
-            json_decode($this->get(sprintf('list/%d/leads.json', $listId), $args)->getBody())
+            $this->_get(sprintf('list/%d/leads.json', $listId))
         );
     }
 
@@ -424,7 +424,7 @@ class Client extends GuzzleClient
         }
 
         return new GetLeadResponse(
-            json_decode($this->get(sprintf('lead/%d.json', $id), $args)->getBody())
+            $this->_get(sprintf('lead/%d.json', $id), $args)
         );
     }
 
@@ -445,7 +445,7 @@ class Client extends GuzzleClient
         $args['id'] = $id;
 
         return new IsMemberOfListResponse(
-            json_decode($this->get(sprintf('lists/%d/leads/ismember.json', $listId), $args)->getBody())
+            $this->_get(sprintf('lists/%d/leads/ismember.json', $listId), $args)
         );
     }
 
@@ -464,7 +464,7 @@ class Client extends GuzzleClient
         $args['id'] = $id;
 
         return new GetCampaignResponse(
-            json_decode($this->get(sprintf('campaigns/%d.json', $id), $args)->getBody())
+            $this->_get(sprintf('campaigns/%d.json', $id), $args)
         );
     }
 
@@ -485,7 +485,7 @@ class Client extends GuzzleClient
         }
 
         return new GetCampaignsResponse(
-            json_decode($this->get('campaigns.json', $args)->getBody())
+            $this->_get('campaigns.json', $args)
         );
     }
 
@@ -506,7 +506,7 @@ class Client extends GuzzleClient
         $args['id'] = (array) $leads;
 
         return new AddOrRemoveLeadsToListResponse(
-            json_decode($this->get(sprintf('lists/%d/leads.json', $listId), $args)->getBody())
+            $this->_get(sprintf('lists/%d/leads.json', $listId), $args)
         );
     }
 
@@ -527,7 +527,7 @@ class Client extends GuzzleClient
         $args['id'] = (array) $leads;
 
         return new AddOrRemoveLeadsToListResponse(
-            json_decode($this->delete(sprintf('lists/%d/leads.json', $listId), $args)->getBody())
+            $this->_delete(sprintf('lists/%d/leads.json', $listId), $args)
         );
     }
 
@@ -545,9 +545,7 @@ class Client extends GuzzleClient
     {
         $args['id'] = (array) $leads;
 
-        return new DeleteLeadResponse(
-            json_decode($this->delete('leads.json', $args)->getBody())
-        );
+        return new DeleteLeadResponse($this->_delete('leads.json', $args));
     }
 
     /**
@@ -575,7 +573,7 @@ class Client extends GuzzleClient
         }
 
         return new RequestCampaignResponse(
-            json_decode($this->post(sprintf('campaigns/%d/trigger.json', $id), $args)->getBody())
+            $this->_post(sprintf('campaigns/%d/trigger.json', $id), $args)
         );
     }
 
@@ -604,7 +602,7 @@ class Client extends GuzzleClient
         }
 
         return new ScheduleCampaignResponse(
-            json_decode($this->post(sprintf('campaigns/%d/schedule.json', $id), $args)->getBody())
+            $this->_post(sprintf('campaigns/%d/schedule.json', $id), $args)
         );
     }
 
@@ -628,7 +626,7 @@ class Client extends GuzzleClient
         }
 
         return new AssociateLeadResponse(
-            json_decode($this->post(sprintf('leads/%d/associate.json', $id), $args)->getBody())
+            $this->_post(sprintf('leads/%d/associate.json', $id), $args)
         );
     }
 
@@ -648,7 +646,7 @@ class Client extends GuzzleClient
         $args['sinceDatetime'] = $sinceDatetime;
 
         return new AssociateLeadResponse(
-            json_decode($this->post('activities/pagingtoken.json', $args)->getBody())
+            $this->_post('activities/pagingtoken.json', $args)
         );
     }
 
@@ -675,7 +673,7 @@ class Client extends GuzzleClient
         }
         
         return new GetLeadChanges(
-            json_decode($this->post('activities/leadchanges.json', $args)->getBody())
+            $this->_post('activities/leadchanges.json', $args)
         );
     }
 
@@ -690,12 +688,12 @@ class Client extends GuzzleClient
      *
      * @return Response
      */
-    public function updateEmailContent($emailId, $args = array(), $returnRaw = false)
+    public function updateEmailContent($emailId, $args = array())
     {
         $args['id'] = $emailId;
 
         return new Response(
-            json_decode($this->post(sprintf('rest/asset/v1/email/%d/content.json', $emailId), $args)->getBody())
+            $this->_post(sprintf('rest/asset/v1/email/%d/content.json', $emailId), $args)
         );
     }
 
@@ -710,13 +708,13 @@ class Client extends GuzzleClient
      *
      * @return UpdateEmailContentInEditableSectionResponse
      */
-    public function updateEmailContentInEditableSection($emailId, $htmlId, $args = array(), $returnRaw = false)
+    public function updateEmailContentInEditableSection($emailId, $htmlId, $args = array())
     {
         $args['id'] = $emailId;
         $args['htmlId'] = $htmlId;
 
         return new UpdateEmailContentInEditableSectionResponse(
-            json_decode($this->post(sprintf('rest/asset/v1/email/%d/content/{htmlId}.json', $emailId), $args)->getBody())
+            $this->_post(sprintf('rest/asset/v1/email/%d/content/{htmlId}.json', $emailId), $args)
         );
     }
 
@@ -731,12 +729,45 @@ class Client extends GuzzleClient
      *
      * @return ApproveEmailResponse
      */
-    public function approveEmail($emailId, $args = array(), $returnRaw = false)
+    public function approveEmail($emailId, $args = array())
     {
         $args['id'] = $emailId;
 
         return new ApproveEmailResponse(
-            json_decode($this->post(sprintf('rest/asset/v1/email/%d/approveDraft.json', $emailId), $args)->getBody())
+            $this->_post(sprintf('rest/asset/v1/email/%d/approveDraft.json', $emailId), $args)
         );
+    }
+
+    /**
+     * Perform a POST request and JSON decode the response
+     *
+     * @param string $url
+     * @param array $args
+     * @return array
+     */
+    private function _post(string $url, array $args = []) : array {
+        return json_decode($this->post($url, $args)->getBody());
+    }
+
+    /**
+     * Perform a GET request and JSON decode the response
+     *
+     * @param string $url
+     * @param array $args
+     * @return array
+     */
+    private function _get(string $url, array $args = []) : array {
+        return json_decode($this->get($url, $args)->getBody());
+    }
+
+    /**
+     * Perform a DELETE request and JSON decode the response
+     *
+     * @param string $url
+     * @param array $args
+     * @return array
+     */
+    private function _delete(string $url, array $args = []) : array {
+        return json_decode($this->delete($url, $args)->getBody());
     }
 }
