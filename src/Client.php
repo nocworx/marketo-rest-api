@@ -117,7 +117,6 @@ class Client extends GuzzleClient
             $args['format'] = 'csv';
         }
 
-        return $this->getResult('importLeadsCsv', $args);
         return json_decode($this->post('leads.json', $args)->getBody());
 
     }
